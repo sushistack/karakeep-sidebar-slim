@@ -1,0 +1,75 @@
+name: release
+
+# Manual release: push a tag matching the manifest version, e.g. `git tag v1.2.12.8 && git push --tags`.
+# The weekly auto-release.yml handles the automated path; this is the manual/emergency escape hatch.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Sign with AMO and publish
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Overlay sidebar into upstream
+        run: ./scripts/overlay.sh
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "pnpm"
+          cache-dependency-path: upstream/pnpm-lock.yaml
+
+      - name: Verify manifest version matches tag
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          manifest=$(jq -r .version extension/manifest.json)
+          if [ "$tag" != "$manifest" ]; then
+            echo "::error::Tag version ($tag) does not match extension/manifest.json version ($manifest). Bump manifest.json before tagging." >&2
+            exit 1
+          fi
+
+      - name: Install dependencies
+        working-directory: upstream
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Build extension (Firefox)
+        working-directory: upstream
+        env:
+          VITE_BUILD_FIREFOX: "1"
+        run: pnpm --filter @karakeep/browser-extension build
+
+      - name: Install web-ext
+        run: npm install --global web-ext
+
+      - name: Sign with AMO (unlisted)
+        env:
+          WEB_EXT_API_KEY: ${{ secrets.WEB_EXT_API_KEY }}
+          WEB_EXT_API_SECRET: ${{ secrets.WEB_EXT_API_SECRET }}
+        run: |
+          web-ext sign \
+            --source-dir=upstream/apps/browser-extension/dist \
+            --artifacts-dir=./web-ext-artifacts \
+            --channel=unlisted \
+            --api-key="$WEB_EXT_API_KEY" \
+            --api-secret="$WEB_EXT_API_SECRET"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --title "$GITHUB_REF_NAME" \
+            --generate-notes \
+            web-ext-artifacts/*.xpi

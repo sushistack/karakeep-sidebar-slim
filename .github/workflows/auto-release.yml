@@ -1,0 +1,143 @@
+name: auto-release
+
+# Weekly: sync upstream to its latest release tag, rebuild the sidebar against it,
+# and if everything passes, sign + publish a new patch release. Any failure pings ntfy.
+# Self-contained on purpose: a tag pushed by GITHUB_TOKEN cannot trigger release.yml,
+# so this job does sync -> build -> sign -> release itself.
+on:
+  schedule:
+    - cron: "0 6 * * 1" # every Monday 06:00 UTC
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Release even if upstream did not change"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  auto-release:
+    name: Sync upstream and auto-release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Bump upstream submodule to latest release tag
+        id: sync
+        run: |
+          old=$(git -C upstream rev-parse HEAD)
+          git -C upstream fetch --tags --quiet origin
+          # latest semver tag like v0.x.y on upstream
+          latest=$(git -C upstream tag -l 'v*' --sort=-v:refname | head -1)
+          if [ -z "$latest" ]; then
+            echo "::error::no upstream tags found" >&2
+            exit 1
+          fi
+          git -C upstream checkout --quiet "$latest"
+          new=$(git -C upstream rev-parse HEAD)
+          echo "tag=$latest" >> "$GITHUB_OUTPUT"
+          if [ "$old" = "$new" ] && [ "${{ inputs.force }}" != "true" ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "Upstream unchanged ($latest); nothing to release."
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "Upstream -> $latest ($new)"
+          fi
+
+      - name: Overlay sidebar into upstream
+        if: steps.sync.outputs.changed == 'true'
+        run: ./scripts/overlay.sh
+
+      - uses: pnpm/action-setup@v4
+        if: steps.sync.outputs.changed == 'true'
+        with:
+          version: 9.15.9
+
+      - uses: actions/setup-node@v4
+        if: steps.sync.outputs.changed == 'true'
+        with:
+          node-version: "20"
+          cache: "pnpm"
+          cache-dependency-path: upstream/pnpm-lock.yaml
+
+      - name: Install dependencies
+        if: steps.sync.outputs.changed == 'true'
+        working-directory: upstream
+        run: pnpm install --no-frozen-lockfile
+
+      # GATE 1: build + lint must pass before we touch a version or sign anything.
+      - name: Build extension (Firefox)
+        if: steps.sync.outputs.changed == 'true'
+        working-directory: upstream
+        env:
+          VITE_BUILD_FIREFOX: "1"
+        run: pnpm --filter @karakeep/browser-extension build
+
+      - name: Install web-ext
+        if: steps.sync.outputs.changed == 'true'
+        run: npm install --global web-ext
+
+      - name: Lint built extension
+        if: steps.sync.outputs.changed == 'true'
+        run: web-ext lint --source-dir=upstream/apps/browser-extension/dist --warnings-as-errors=false
+
+      - name: Bump manifest patch version
+        if: steps.sync.outputs.changed == 'true'
+        id: ver
+        run: |
+          v=$(jq -r .version extension/manifest.json)
+          new="${v%.*}.$((${v##*.}+1))"
+          jq --arg v "$new" '.version=$v' extension/manifest.json > extension/manifest.tmp
+          mv extension/manifest.tmp extension/manifest.json
+          echo "version=$new" >> "$GITHUB_OUTPUT"
+          echo "$v -> $new"
+
+      # GATE 2: AMO signing must succeed before we commit/tag/release.
+      - name: Sign with AMO (unlisted)
+        if: steps.sync.outputs.changed == 'true'
+        env:
+          WEB_EXT_API_KEY: ${{ secrets.WEB_EXT_API_KEY }}
+          WEB_EXT_API_SECRET: ${{ secrets.WEB_EXT_API_SECRET }}
+        run: |
+          web-ext sign \
+            --source-dir=upstream/apps/browser-extension/dist \
+            --artifacts-dir=./web-ext-artifacts \
+            --channel=unlisted \
+            --api-key="$WEB_EXT_API_KEY" \
+            --api-secret="$WEB_EXT_API_SECRET"
+
+      - name: Commit version + upstream pointer
+        if: steps.sync.outputs.changed == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add extension/manifest.json upstream
+          git commit -m "chore(auto): release v${{ steps.ver.outputs.version }} on upstream ${{ steps.sync.outputs.tag }}"
+          git tag "v${{ steps.ver.outputs.version }}"
+          git push origin HEAD --tags
+
+      - name: Create GitHub Release
+        if: steps.sync.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "v${{ steps.ver.outputs.version }}" \
+            --title "v${{ steps.ver.outputs.version }}" \
+            --notes "Automated release against upstream ${{ steps.sync.outputs.tag }}." \
+            web-ext-artifacts/*.xpi
+
+      # Any failure above -> ntfy. NTFY_URL is the full topic URL, e.g. https://ntfy.sh/my-secret-topic
+      - name: Notify failure
+        if: failure()
+        run: |
+          curl -fsS \
+            -H "Title: karakeep-sidebar auto-release failed" \
+            -H "Priority: high" \
+            -H "Tags: rotating_light" \
+            -d "Upstream ${{ steps.sync.outputs.tag }} broke the build. $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            "${{ secrets.NTFY_URL }}"

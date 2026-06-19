@@ -1,0 +1,58 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build and lint extension
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Overlay sidebar into upstream
+        run: ./scripts/overlay.sh
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "pnpm"
+          cache-dependency-path: upstream/pnpm-lock.yaml
+
+      # ponytail: --no-frozen-lockfile because the overlaid extension's deps differ
+      # from upstream's committed lockfile. Full workspace install; filter with
+      # `--filter @karakeep/browser-extension...` if CI time becomes a problem.
+      - name: Install dependencies
+        working-directory: upstream
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Build extension (Firefox)
+        working-directory: upstream
+        env:
+          VITE_BUILD_FIREFOX: "1"
+        run: pnpm --filter @karakeep/browser-extension build
+
+      - name: Install web-ext
+        run: npm install --global web-ext
+
+      - name: Lint built extension
+        run: web-ext lint --source-dir=upstream/apps/browser-extension/dist --warnings-as-errors=false
+
+      - name: Package XPI
+        run: web-ext build --source-dir=upstream/apps/browser-extension/dist --artifacts-dir=./web-ext-artifacts --overwrite-dest
+
+      - name: Upload XPI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: karakeep-sidebar-xpi
+          path: web-ext-artifacts/*.zip
+          if-no-files-found: error
