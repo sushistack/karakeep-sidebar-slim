@@ -99,6 +99,17 @@ jobs:
         if: steps.sync.outputs.changed == 'true'
         run: web-ext lint --source-dir=upstream/apps/browser-extension/dist --warnings-as-errors=false
 
+      # Inject update_url into the BUILT manifest only (not the source), after lint.
+      # web-ext lint errors on update_url (MANIFEST_UPDATE_URL), but unlisted/self-distributed
+      # signing accepts it — and Firefox needs it in the installed xpi to auto-update.
+      - name: Inject update_url into built manifest
+        if: steps.sync.outputs.changed == 'true'
+        run: |
+          m=upstream/apps/browser-extension/dist/manifest.json
+          jq '.browser_specific_settings.gecko.update_url = "https://raw.githubusercontent.com/sushistack/karakeep-sidebar/main/updates.json"' \
+            "$m" > "$m.tmp" && mv "$m.tmp" "$m"
+          jq .browser_specific_settings "$m"
+
       # GATE 2: AMO signing must succeed before we commit/tag/release.
       - name: Sign with AMO (unlisted)
         if: steps.sync.outputs.changed == 'true'
