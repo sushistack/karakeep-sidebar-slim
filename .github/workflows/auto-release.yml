@@ -21,6 +21,10 @@ jobs:
   auto-release:
     name: Sync upstream and auto-release
     runs-on: ubuntu-latest
+    # job-level so the notify steps' `if: env.NTFY_URL != ''` guard can read them
+    env:
+      NTFY_URL: ${{ secrets.NTFY_URL }}
+      NTFY_TOKEN: ${{ secrets.NTFY_TOKEN }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -157,18 +161,37 @@ jobs:
             --notes "Automated release against upstream ${{ steps.sync.outputs.tag }}." \
             web-ext-artifacts/*.xpi
 
-      # Any failure above -> ntfy. NTFY_URL = full topic URL (e.g. https://ntfy.sh/my-secret-topic).
-      # NTFY_TOKEN (optional) = access token for protected/reserved topics (set it if NTFY_URL returns 403).
-      - name: Notify failure
-        if: failure()
-        env:
-          NTFY_URL: ${{ secrets.NTFY_URL }}
-          NTFY_TOKEN: ${{ secrets.NTFY_TOKEN }}
+      # ✅ Case 1 — build + release succeeded, a new version shipped.
+      - name: Notify success (ntfy)
+        if: success() && steps.sync.outputs.changed == 'true' && env.NTFY_URL != ''
         run: |
-          curl -fsS \
-            ${NTFY_TOKEN:+-H "Authorization: Bearer $NTFY_TOKEN"} \
-            -H "Title: karakeep-sidebar auto-release failed" \
-            -H "Priority: high" \
+          AUTH=(); [ -n "${NTFY_TOKEN:-}" ] && AUTH=(-H "Authorization: Bearer $NTFY_TOKEN")
+          REL="${{ github.server_url }}/${{ github.repository }}/releases/tag/v${{ steps.ver.outputs.version }}"
+          curl -fsSL "${AUTH[@]}" \
+            -H "Title: 🔖 Karakeep Sidebar updated" \
+            -H "Tags: white_check_mark,rocket,package" \
+            -H "Priority: default" \
+            -H "Click: $REL" \
+            -H "Actions: view, Open release, $REL" \
+            -d "✅ v${{ steps.ver.outputs.version }} signed & published.
+          📦 Upstream: Karakeep ${{ steps.sync.outputs.tag }}
+          🦊 Firefox will auto-update within a day." \
+            "$NTFY_URL" || echo "ntfy notify failed (ignored)"
+
+      # 🚨 Cases 2 & 3 — any failure (sync, build, lint, sign, release, or anything else).
+      - name: Notify failure (ntfy)
+        if: failure() && env.NTFY_URL != ''
+        run: |
+          AUTH=(); [ -n "${NTFY_TOKEN:-}" ] && AUTH=(-H "Authorization: Bearer $NTFY_TOKEN")
+          RUN="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          curl -fsSL "${AUTH[@]}" \
+            -H "Title: 🚨 Karakeep Sidebar auto-release FAILED" \
             -H "Tags: rotating_light" \
-            -d "Upstream ${{ steps.sync.outputs.tag }} broke the build. $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
-            "$NTFY_URL"
+            -H "Priority: high" \
+            -H "Click: $RUN" \
+            -H "Actions: view, Open run logs, $RUN" \
+            -d "❌ Workflow run #${{ github.run_number }} failed.
+          🔄 Upstream: ${{ steps.sync.outputs.tag }}
+          ⚠️ Sidebar auto-updates are paused until this is fixed.
+          🔎 Check the logs to see which step broke." \
+            "$NTFY_URL" || echo "ntfy notify failed (ignored)"
