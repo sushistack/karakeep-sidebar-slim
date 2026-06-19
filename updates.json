@@ -1,0 +1,12 @@
+{
+  "addons": {
+    "karakeep-sidebar@sushistack": {
+      "updates": [
+        {
+          "version": "1.2.12.8",
+          "update_link": "https://github.com/sushistack/karakeep-sidebar-slim/releases/download/v1.2.12.8/6f64d07c1716447e96d3-1.2.12.8.xpi"
+        }
+      ]
+    }
+  }
+}
