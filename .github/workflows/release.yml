@@ -2,6 +2,8 @@ name: release
 
 # Manual release: push a tag matching the manifest version, e.g. `git tag v1.2.12.8 && git push --tags`.
 # The weekly auto-release.yml handles the automated path; this is the manual/emergency escape hatch.
+# Note: this path does NOT regenerate updates.json — if you ship a manual release that end users
+# should auto-update to, edit updates.json by hand (version + update_link). auto-release does it for you.
 on:
   push:
     tags: ["v*"]

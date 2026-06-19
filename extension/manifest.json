@@ -31,7 +31,9 @@
   },
   "background": {
     "service_worker": "src/background/background.ts",
-    "scripts": ["src/background/background.ts"]
+    "scripts": [
+      "src/background/background.ts"
+    ]
   },
   "sidebar_action": {
     "default_panel": "index.html#/sidebar",
@@ -49,7 +51,8 @@
   },
   "browser_specific_settings": {
     "gecko": {
-      "id": "karakeep-sidebar@sushistack"
+      "id": "karakeep-sidebar@sushistack",
+      "update_url": "https://raw.githubusercontent.com/sushistack/karakeep-sidebar/main/updates.json"
     }
   },
   "content_security_policy": {
@@ -62,19 +65,29 @@
     "activeTab",
     "scripting"
   ],
-  "optional_host_permissions": ["<all_urls>"],
+  "optional_host_permissions": [
+    "<all_urls>"
+  ],
   "content_scripts": [
     {
-      "matches": ["https://karakeep.invalid/*"],
-      "js": ["src/content-scripts/singlefile-content-script.ts"],
+      "matches": [
+        "https://karakeep.invalid/*"
+      ],
+      "js": [
+        "src/content-scripts/singlefile-content-script.ts"
+      ],
       "run_at": "document_idle",
       "all_frames": false
     }
   ],
   "web_accessible_resources": [
     {
-      "resources": ["assets/*.js"],
-      "matches": ["<all_urls>"]
+      "resources": [
+        "assets/*.js"
+      ],
+      "matches": [
+        "<all_urls>"
+      ]
     }
   ],
   "commands": {

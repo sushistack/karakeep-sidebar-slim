@@ -113,12 +113,25 @@ jobs:
             --api-key="$WEB_EXT_API_KEY" \
             --api-secret="$WEB_EXT_API_SECRET"
 
-      - name: Commit version + upstream pointer
+      # Firefox self-distributed auto-update manifest. update_link points at the
+      # release asset published in the next step (deterministic from tag + filename).
+      # $GITHUB_REPOSITORY is dynamic, so this survives the eventual repo rename.
+      - name: Generate updates.json
+        if: steps.sync.outputs.changed == 'true'
+        run: |
+          fname=$(basename "$(ls web-ext-artifacts/*.xpi | head -1)")
+          ver="${{ steps.ver.outputs.version }}"
+          link="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/download/v$ver/$fname"
+          jq -n --arg id "karakeep-sidebar@sushistack" --arg v "$ver" --arg link "$link" \
+            '{addons: {($id): {updates: [{version: $v, update_link: $link}]}}}' > updates.json
+          cat updates.json
+
+      - name: Commit version + updates.json + upstream pointer
         if: steps.sync.outputs.changed == 'true'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add extension/manifest.json upstream
+          git add extension/manifest.json updates.json upstream
           git commit -m "chore(auto): release v${{ steps.ver.outputs.version }} on upstream ${{ steps.sync.outputs.tag }}"
           git tag "v${{ steps.ver.outputs.version }}"
           git push origin HEAD --tags
