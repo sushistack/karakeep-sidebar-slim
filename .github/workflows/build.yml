@@ -56,3 +56,17 @@ jobs:
           name: karakeep-sidebar-xpi
           path: web-ext-artifacts/*.zip
           if-no-files-found: error
+
+      - name: Notify failure
+        if: failure()
+        env:
+          NTFY_URL: ${{ secrets.NTFY_URL }}
+          NTFY_TOKEN: ${{ secrets.NTFY_TOKEN }}
+        run: |
+          curl -fsS \
+            ${NTFY_TOKEN:+-H "Authorization: Bearer $NTFY_TOKEN"} \
+            -H "Title: karakeep-sidebar build failed" \
+            -H "Priority: high" \
+            -H "Tags: rotating_light" \
+            -d "Build failed on $GITHUB_REF_NAME. $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            "$NTFY_URL"

@@ -49,6 +49,19 @@ jobs:
             echo "Upstream -> $latest ($new)"
           fi
 
+      # Bump BEFORE build so dist/manifest.json carries the new version (AMO rejects
+      # signing a version it already has).
+      - name: Bump manifest patch version
+        if: steps.sync.outputs.changed == 'true'
+        id: ver
+        run: |
+          v=$(jq -r .version extension/manifest.json)
+          new="${v%.*}.$((${v##*.}+1))"
+          jq --arg v "$new" '.version=$v' extension/manifest.json > extension/manifest.tmp
+          mv extension/manifest.tmp extension/manifest.json
+          echo "version=$new" >> "$GITHUB_OUTPUT"
+          echo "$v -> $new"
+
       - name: Overlay sidebar into upstream
         if: steps.sync.outputs.changed == 'true'
         run: ./scripts/overlay.sh
@@ -86,17 +99,6 @@ jobs:
         if: steps.sync.outputs.changed == 'true'
         run: web-ext lint --source-dir=upstream/apps/browser-extension/dist --warnings-as-errors=false
 
-      - name: Bump manifest patch version
-        if: steps.sync.outputs.changed == 'true'
-        id: ver
-        run: |
-          v=$(jq -r .version extension/manifest.json)
-          new="${v%.*}.$((${v##*.}+1))"
-          jq --arg v "$new" '.version=$v' extension/manifest.json > extension/manifest.tmp
-          mv extension/manifest.tmp extension/manifest.json
-          echo "version=$new" >> "$GITHUB_OUTPUT"
-          echo "$v -> $new"
-
       # GATE 2: AMO signing must succeed before we commit/tag/release.
       - name: Sign with AMO (unlisted)
         if: steps.sync.outputs.changed == 'true'
@@ -131,13 +133,18 @@ jobs:
             --notes "Automated release against upstream ${{ steps.sync.outputs.tag }}." \
             web-ext-artifacts/*.xpi
 
-      # Any failure above -> ntfy. NTFY_URL is the full topic URL, e.g. https://ntfy.sh/my-secret-topic
+      # Any failure above -> ntfy. NTFY_URL = full topic URL (e.g. https://ntfy.sh/my-secret-topic).
+      # NTFY_TOKEN (optional) = access token for protected/reserved topics (set it if NTFY_URL returns 403).
       - name: Notify failure
         if: failure()
+        env:
+          NTFY_URL: ${{ secrets.NTFY_URL }}
+          NTFY_TOKEN: ${{ secrets.NTFY_TOKEN }}
         run: |
           curl -fsS \
+            ${NTFY_TOKEN:+-H "Authorization: Bearer $NTFY_TOKEN"} \
             -H "Title: karakeep-sidebar auto-release failed" \
             -H "Priority: high" \
             -H "Tags: rotating_light" \
             -d "Upstream ${{ steps.sync.outputs.tag }} broke the build. $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
-            "${{ secrets.NTFY_URL }}"
+            "$NTFY_URL"
