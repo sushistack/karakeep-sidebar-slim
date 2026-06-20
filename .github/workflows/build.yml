@@ -69,10 +69,13 @@ jobs:
           RUN="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           curl -fsSL "${AUTH[@]}" \
             -H "Title: 🚨 Karakeep Sidebar build FAILED" \
-            -H "Tags: rotating_light" \
+            -H "Tags: card,rotating_light" \
             -H "Priority: high" \
             -H "Click: $RUN" \
             -H "Actions: view, Open run logs, $RUN" \
-            -d "❌ Build check failed on \`${{ github.ref_name }}\` (run #${{ github.run_number }}).
-          🔎 Check the logs to see which step broke." \
+            -d '{"type":"kv","rows":[
+              {"key":"Status","value":"build check failed","status":"error"},
+              {"key":"Branch","value":"${{ github.ref_name }}","icon":"package"},
+              {"key":"Run","value":"#${{ github.run_number }}","status":"error","icon":"error"},
+              {"key":"Next","value":"check the run logs","icon":"status"}]}' \
             "$NTFY_URL" || echo "ntfy notify failed (ignored)"

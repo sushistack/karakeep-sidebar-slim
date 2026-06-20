@@ -169,13 +169,15 @@ jobs:
           REL="${{ github.server_url }}/${{ github.repository }}/releases/tag/v${{ steps.ver.outputs.version }}"
           curl -fsSL "${AUTH[@]}" \
             -H "Title: 🔖 Karakeep Sidebar updated" \
-            -H "Tags: white_check_mark,rocket,package" \
+            -H "Tags: card,white_check_mark,rocket,package" \
             -H "Priority: default" \
             -H "Click: $REL" \
             -H "Actions: view, Open release, $REL" \
-            -d "✅ v${{ steps.ver.outputs.version }} signed & published.
-          📦 Upstream: Karakeep ${{ steps.sync.outputs.tag }}
-          🦊 Firefox will auto-update within a day." \
+            -d '{"type":"kv","rows":[
+              {"key":"Status","value":"signed & published","status":"ok"},
+              {"key":"Version","value":"v${{ steps.ver.outputs.version }}","icon":"version"},
+              {"key":"Upstream","value":"Karakeep ${{ steps.sync.outputs.tag }}","icon":"package"},
+              {"key":"Update","value":"Firefox auto-updates within a day","icon":"uptime"}]}' \
             "$NTFY_URL" || echo "ntfy notify failed (ignored)"
 
       # 🚨 Cases 2 & 3 — any failure (sync, build, lint, sign, release, or anything else).
@@ -186,12 +188,14 @@ jobs:
           RUN="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           curl -fsSL "${AUTH[@]}" \
             -H "Title: 🚨 Karakeep Sidebar auto-release FAILED" \
-            -H "Tags: rotating_light" \
+            -H "Tags: card,rotating_light" \
             -H "Priority: high" \
             -H "Click: $RUN" \
             -H "Actions: view, Open run logs, $RUN" \
-            -d "❌ Workflow run #${{ github.run_number }} failed.
-          🔄 Upstream: ${{ steps.sync.outputs.tag }}
-          ⚠️ Sidebar auto-updates are paused until this is fixed.
-          🔎 Check the logs to see which step broke." \
+            -d '{"type":"kv","rows":[
+              {"key":"Status","value":"auto-release failed","status":"error"},
+              {"key":"Run","value":"#${{ github.run_number }}","status":"error","icon":"error"},
+              {"key":"Upstream","value":"Karakeep ${{ steps.sync.outputs.tag }}","icon":"package"},
+              {"key":"Impact","value":"auto-updates paused","status":"warn","icon":"warning"},
+              {"key":"Next","value":"check the run logs","icon":"status"}]}' \
             "$NTFY_URL" || echo "ntfy notify failed (ignored)"
