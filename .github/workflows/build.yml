@@ -72,7 +72,7 @@ jobs:
             -H "Tags: card,rotating_light" \
             -H "Priority: high" \
             -H "Click: $RUN" \
-            -H "Actions: view, Open run logs, $RUN; view, Open Kuma, https://kuma.eli.kr" \
+            -H "Actions: view, Open run logs, $RUN" \
             -d '{"type":"kv","rows":[
               {"key":"Status","value":"build check failed","status":"error"},
               {"key":"Branch","value":"${{ github.ref_name }}","icon":"package"},
