@@ -172,7 +172,7 @@ jobs:
             -H "Tags: card,white_check_mark,rocket,package" \
             -H "Priority: default" \
             -H "Click: $REL" \
-            -H "Actions: view, Open release, $REL" \
+            -H "Actions: view, Open release, $REL; view, Open Kuma, https://kuma.eli.kr" \
             -d '{"type":"kv","rows":[
               {"key":"Status","value":"signed & published","status":"ok"},
               {"key":"Version","value":"v${{ steps.ver.outputs.version }}","icon":"version"},
@@ -191,7 +191,7 @@ jobs:
             -H "Tags: card,rotating_light" \
             -H "Priority: high" \
             -H "Click: $RUN" \
-            -H "Actions: view, Open run logs, $RUN" \
+            -H "Actions: view, Open run logs, $RUN; view, Open Kuma, https://kuma.eli.kr" \
             -d '{"type":"kv","rows":[
               {"key":"Status","value":"auto-release failed","status":"error"},
               {"key":"Run","value":"#${{ github.run_number }}","status":"error","icon":"error"},
